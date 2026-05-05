@@ -95,7 +95,7 @@ def upload_dataset(file_path: str, dataset_type: str) -> dict[str, Any]:
     try:
         client = _get_client()
         s3_key = client.upload_to_s3(file_path, dataset_type)
-        return {"ok": True, "s3_key": s3_key, "bucket": client._s3_bucket}
+        return {"ok": True, "s3_key": s3_key, "bucket": client.s3_bucket}
     except OpenbisConfigError as e:
         return {"ok": False, "error": f"configuration: {e}"}
     except FileNotFoundError as e:

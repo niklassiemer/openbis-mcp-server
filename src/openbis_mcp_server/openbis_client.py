@@ -69,6 +69,11 @@ class OpenbisClient:
         assert self._url is not None  # checked in __init__
         return self._url
 
+    @property
+    def s3_bucket(self) -> str | None:
+        """The configured S3 bucket name, or ``None`` if not set."""
+        return self._s3_bucket
+
     def connect(self) -> Any:
         """Return a logged-in pyBIS ``Openbis`` instance, creating it on first call."""
         if self._openbis is not None:

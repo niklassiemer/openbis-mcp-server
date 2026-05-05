@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pathlib
 import re
 
 import pytest
@@ -115,7 +116,7 @@ def test_s3_key_unknown_username_fallback(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_upload_to_s3_missing_credentials(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """upload_to_s3 raises OpenbisConfigError when S3 env vars are absent."""
     client = _make_client(monkeypatch)
@@ -124,7 +125,7 @@ def test_upload_to_s3_missing_credentials(
     monkeypatch.delenv("S3_BUCKET", raising=False)
     # Re-create client so it picks up the cleared env vars
     client = _make_client(monkeypatch)
-    test_file = tmp_path / "dummy.txt"  # type: ignore[operator]
+    test_file = tmp_path / "dummy.txt"
     test_file.write_text("hello")
     with pytest.raises(OpenbisConfigError, match="S3"):
         client.upload_to_s3(str(test_file), "RAW_DATA")
