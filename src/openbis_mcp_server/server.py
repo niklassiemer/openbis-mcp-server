@@ -59,9 +59,49 @@ def get_server_info() -> dict[str, Any]:
                 fn_or_val() if callable(fn_or_val) else fn_or_val
             )
             break
-        except Exception:  # noqa: BLE001 — best-effort metadata
+        except Exception:
             continue
     return info
+
+
+@mcp.tool()
+def upload_dataset(file_path: str, dataset_type: str) -> dict[str, Any]:
+    """Upload a local file to the configured S3 bucket as an openBIS dataset.
+
+    The file is stored on S3 under a key that differs from the original
+    filename to prevent collisions.  The key format is::
+
+        {timestamp}_{dataset_type}_{username}_{original_filename}
+
+    where *timestamp* is UTC (``YYYY-MM-DDTHH-MM-SS.ffffff``).
+
+    Requires these environment variables in addition to the openBIS ones:
+
+    * ``S3_ACCESS_KEY`` — S3 access key ID
+    * ``S3_ACCESS_SECRET`` — S3 secret access key
+    * ``S3_BUCKET`` — target bucket name
+    * ``S3_ENDPOINT_URL`` — (optional) custom S3 endpoint
+    * ``S3_ENDPOINT_PORT`` — (optional) port for the custom endpoint
+    * ``S3_REGION`` — (optional) AWS region, defaults to provider default
+
+    Args:
+        file_path: Absolute or relative path to the local file to upload.
+        dataset_type: openBIS dataset type code, e.g. ``"RAW_DATA"``.
+
+    Returns:
+        A dict with ``ok``, ``s3_key``, and ``bucket`` on success, or
+        ``ok=False`` and an ``error`` message on failure.
+    """
+    try:
+        client = _get_client()
+        s3_key = client.upload_to_s3(file_path, dataset_type)
+        return {"ok": True, "s3_key": s3_key, "bucket": client._s3_bucket}
+    except OpenbisConfigError as e:
+        return {"ok": False, "error": f"configuration: {e}"}
+    except FileNotFoundError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"upload failed: {e}"}
 
 
 @mcp.tool()
@@ -96,6 +136,6 @@ def _stringify(value: Any) -> Any:
     if callable(iso):
         try:
             return iso()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return value
