@@ -203,7 +203,7 @@ def _crc32_file(path: str) -> str:
     with open(path, "rb") as fh:
         for chunk in fh:
             prev = zlib.crc32(chunk, prev)
-    return "%x" % (prev & 0xFFFFFFFF)
+    return f"{prev & 0xFFFFFFFF:x}"
 
 
 def _xxhash64_file(path: str, block_size: int = 2**22) -> str:
@@ -313,6 +313,8 @@ def make_s3_key(filename: str, dataset_type: str, username: str = "unknown") -> 
     Returns:
         The collision-avoiding S3 object key string.
     """
+    # Hyphens are used throughout (including between time components) to keep
+    # the key filesystem-safe and URL-safe without requiring any escaping.
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S.%f")
     basename = os.path.basename(filename)
     return f"{timestamp}_{dataset_type}_{username}_{basename}"
