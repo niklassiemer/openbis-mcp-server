@@ -22,7 +22,6 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "boto3>=1.33.0",
     "mcp>=1.2.0",
     "pybis>=1.36.0",
     "pydantic>=2.0",
@@ -34,6 +33,10 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
     "mypy>=1.10",
+]
+s3 = [
+    "boto3>=1.35",
+    "xxhash>=3.0",
 ]
 
 [project.scripts]

@@ -8,7 +8,7 @@ logs in on first use. Higher-level logic (search, create, upload, ...) lives in
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -30,6 +30,15 @@ class OpenbisClient:
     ) -> None:
         self._url = url or os.environ.get("OPENBIS_URL")
         self._token = token or os.environ.get("OPENBIS_TOKEN")
+        # Support reading the token from a file (matches the pyBIS convention
+        # of storing tokens under ~/.pybis/<host>.token). Used only if
+        # OPENBIS_TOKEN is empty.
+        if not self._token:
+            token_file = os.environ.get("OPENBIS_TOKEN_FILE")
+            if token_file:
+                p = Path(token_file).expanduser()
+                if p.is_file():
+                    self._token = p.read_text().strip() or None
         self._username = username or os.environ.get("OPENBIS_USERNAME")
         self._password = password or os.environ.get("OPENBIS_PASSWORD")
 
@@ -49,17 +58,10 @@ class OpenbisClient:
             )
         if not self._token and not (self._username and self._password):
             raise OpenbisConfigError(
-                "No credentials found. Set OPENBIS_TOKEN, or both "
+                "No credentials found. Set OPENBIS_TOKEN (or OPENBIS_TOKEN_FILE "
+                "pointing at a file containing the token), or both "
                 "OPENBIS_USERNAME and OPENBIS_PASSWORD."
             )
-
-        # S3 configuration (optional — only required for upload_to_s3)
-        self._s3_access_key = os.environ.get("S3_ACCESS_KEY")
-        self._s3_access_secret = os.environ.get("S3_ACCESS_SECRET")
-        self._s3_bucket = os.environ.get("S3_BUCKET")
-        self._s3_region = os.environ.get("S3_REGION")
-        self._s3_endpoint_url = os.environ.get("S3_ENDPOINT_URL")
-        self._s3_endpoint_port = os.environ.get("S3_ENDPOINT_PORT")
 
         self._openbis: Any | None = None
         self._lock = Lock()
@@ -70,9 +72,9 @@ class OpenbisClient:
         return self._url
 
     @property
-    def s3_bucket(self) -> str | None:
-        """The configured S3 bucket name, or ``None`` if not set."""
-        return self._s3_bucket
+    def username(self) -> str:
+        """The configured username, or ``'unknown'`` if token-based auth is used."""
+        return self._username or "unknown"
 
     def connect(self) -> Any:
         """Return a logged-in pyBIS ``Openbis`` instance, creating it on first call."""
@@ -103,84 +105,3 @@ class OpenbisClient:
                     self._openbis.logout()
                 finally:
                     self._openbis = None
-
-    # ------------------------------------------------------------------
-    # S3 helpers
-    # ------------------------------------------------------------------
-
-    def _make_s3_key(self, file_path: str, dataset_type: str) -> str:
-        """Return a collision-avoiding S3 object key for *file_path*.
-
-        The key follows the convention used in pyiron_rdm/pybis_aixtended:
-
-            ``{timestamp}_{dataset_type}_{username}_{original_filename}``
-
-        where *timestamp* is UTC in the format ``YYYY-MM-DDTHH-MM-SS.ffffff``.
-        This prefix makes every upload unique even when the same file is
-        uploaded multiple times or by different users.
-        """
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S.%f")
-        username = self._username or "unknown"
-        basename = os.path.basename(file_path)
-        return f"{timestamp}_{dataset_type}_{username}_{basename}"
-
-    def _build_s3_client(self) -> Any:
-        """Build and return a boto3 S3 client from the configured environment variables."""
-        import boto3  # type: ignore[import-not-found]
-        import boto3.session  # type: ignore[import-not-found]
-
-        endpoint_url: str | None = None
-        if self._s3_endpoint_url:
-            endpoint_url = self._s3_endpoint_url
-            if self._s3_endpoint_port:
-                endpoint_url = f"{endpoint_url}:{self._s3_endpoint_port}"
-
-        config = boto3.session.Config(
-            signature_version="s3v4",
-            connect_timeout=5,
-            read_timeout=10,
-        )
-        return boto3.client(
-            service_name="s3",
-            endpoint_url=endpoint_url,
-            region_name=self._s3_region,
-            aws_access_key_id=self._s3_access_key,
-            aws_secret_access_key=self._s3_access_secret,
-            config=config,
-        )
-
-    def upload_to_s3(self, file_path: str, dataset_type: str) -> str:
-        """Upload *file_path* to S3 and return the S3 object key.
-
-        The object key on S3 is different from the original filename to avoid
-        collisions.  It follows the convention::
-
-            {timestamp}_{dataset_type}_{username}_{original_filename}
-
-        Requires the ``S3_ACCESS_KEY``, ``S3_ACCESS_SECRET``, and
-        ``S3_BUCKET`` environment variables to be set.
-
-        Args:
-            file_path: Local path to the file to upload.
-            dataset_type: openBIS dataset type code (e.g. ``"RAW_DATA"``).
-
-        Returns:
-            The S3 object key under which the file was stored.
-
-        Raises:
-            OpenbisConfigError: If S3 credentials or bucket are not configured.
-            FileNotFoundError: If *file_path* does not exist.
-        """
-        if not self._s3_access_key or not self._s3_access_secret:
-            raise OpenbisConfigError(
-                "S3 credentials not configured. Set S3_ACCESS_KEY and S3_ACCESS_SECRET."
-            )
-        if not self._s3_bucket:
-            raise OpenbisConfigError("S3 bucket not configured. Set S3_BUCKET.")
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        s3_key = self._make_s3_key(file_path, dataset_type)
-        s3_client = self._build_s3_client()
-        s3_client.upload_file(Filename=file_path, Bucket=self._s3_bucket, Key=s3_key)
-        return s3_key
